@@ -32,7 +32,6 @@ def init_color_function(graph, color_function=None):
 
 
 def format_meta(graph, custom_meta=None):
-
     n = [l for l in graph["nodes"].values()]
     n_unique = len(set([i for s in n for i in s]))
 
@@ -212,8 +211,9 @@ def _format_tooltip(env, member_ids, custom_tooltips, X,
         cluster_stats=cluster_stats,
         custom_tooltips=custom_tooltips,
         histogram=histogram,
-        dist_label="Member")
-    tooltip += "<h3>Node ID</h3> <p>%s</p>" % node_ID
+        dist_label="Member",
+        node_id=node_ID)
+   
     return tooltip
 
 

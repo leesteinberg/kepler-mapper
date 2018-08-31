@@ -32,6 +32,12 @@ class KeplerMapper(object):
                 connect these with an edge.
     3)  	Visualize the network using HTML and D3.js.
 
+    KM has a number of nice features, some which get forgotten.
+        - project : Some projections it makes sense to use a distance matrix, such as knn_distance_#. Using `distance_matrix = <metric>` for a custom metric.
+        - fit_transform : Applies a sequence of projections. Currently, this API is a little confusing and will be changed in the future. 
+        - 
+
+
     """
 
     def __init__(self, verbose=0):
@@ -56,34 +62,33 @@ class KeplerMapper(object):
         if verbose > 0:
             print("KeplerMapper()")
 
-    def project(self, X, projection="sum", scaler=preprocessing.MinMaxScaler(), distance_matrix=False):
+    def project(self, X, projection="sum", scaler=preprocessing.MinMaxScaler(), distance_matrix=None):
         """Creates the projection/lens from a dataset. Input the data set. Specify a projection/lens type. Output the projected data/lens.
 
         Parameters
         ----------
+
         X : Numpy Array
             The data to fit a projection/lens to.
 
         projection :
             Projection parameter is either a string, a Scikit-learn class with fit_transform, like manifold.TSNE(), or a list of dimension indices. A string from ["sum", "mean", "median", "max", "min", "std", "dist_mean", "l2norm", "knn_distance_n"]. If using knn_distance_n write the number of desired neighbors in place of n: knn_distance_5 for summed distances to 5 nearest neighbors. Default = "sum".
 
-        scaler :
-            Scikit-Learn API compatible scaler. Scaler of the data applied before mapping. Use None for no scaling. Default = preprocessing.MinMaxScaler() if None, do no scaling, else apply scaling to the projection. Default: Min-Max scaling
+        scaler : Scikit-Learn API compatible scaler.
+            Scaler of the data applied before mapping. Use None for no scaling. Default = preprocessing.MinMaxScaler() if None, do no scaling, else apply scaling to the projection. Default: Min-Max scaling
 
-        distance_matrix:
-            False or any of: ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice", "euclidean", "hamming", "jaccard", "kulsinski", "mahalanobis", "matching", "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath", "sqeuclidean", "yule"]. If False do nothing, else create a squared distance matrix with the chosen metric, before applying the projection.
+        distance_matrix : Either str or None
+            If not None, then any of ["braycurtis", "canberra", "chebyshev", "cityblock", "correlation", "cosine", "dice", "euclidean", "hamming", "jaccard", "kulsinski", "mahalanobis", "matching", "minkowski", "rogerstanimoto", "russellrao", "seuclidean", "sokalmichener", "sokalsneath", "sqeuclidean", "yule"]. 
+            If False do nothing, else create a squared distance matrix with the chosen metric, before applying the projection.
 
         Returns
         -------
         lens : Numpy Array
             projected data.
 
-
-        Example
-        -------
-
+        Examples
+        --------
         >>> projected_data = mapper.project(data, projection="sum", scaler=km.preprocessing.MinMaxScaler() )
-
         """
 
         # Sae original values off so they can be referenced by later functions in the pipeline
@@ -130,8 +135,7 @@ class KeplerMapper(object):
         if isinstance(projection, str):
             if self.verbose > 0:
                 print("\n..Projecting data using: %s" % (projection))
-            # Stats lenses
-
+            
             def dist_mean(X, axis=1):
                 X_mean = np.mean(X, axis=0)
                 X = np.sum(np.sqrt((X - X_mean)**2), axis=1)
@@ -187,7 +191,9 @@ class KeplerMapper(object):
                       projection="sum",
                       scaler=preprocessing.MinMaxScaler(),
                       distance_matrix=False):
-        """Same as .project() but accepts lists for arguments so you can chain.
+        """ Same as .project() but accepts lists for arguments so you can chain.
+
+            Deprecated.
 
         """
 
@@ -220,10 +226,10 @@ class KeplerMapper(object):
         if self.verbose > 0:
             print("..Composing projection pipeline of length %s:" %
                   (len(projections)))
-            print("Projections: %s\n\n" % ("\n".join(map(str, projections))))
-            print("Distance matrices: %s\n\n" %
+            print("\tProjections: %s" % ("\n\t\t".join(map(str, projections))))
+            print("\tDistance matrices: %s" %
                   ("\n".join(map(str, distance_matrices))))
-            print("Scalers: %s\n\n" % ("\n".join(map(str, scalers))))
+            print("\tScalers: %s" % ("\n".join(map(str, scalers))))
 
         # Pipeline Stack the projection functions
         lens = X
@@ -258,7 +264,7 @@ class KeplerMapper(object):
             Original data or data to run clustering on. If `None`, then use `lens` as default.
 
         clusterer: Default: DBSCAN
-            Scikit-learn API compatible clustering algorithm. Must provide `fit`, `get_labels`, and produce attribute `labels_`.
+            Scikit-learn API compatible clustering algorithm. Must provide `fit` and `predict`.
 
         cover: type kmapper.Cover
             Cover scheme for lens. Instance of kmapper.cover providing methods `define_bins` and `find_entries`.
@@ -284,8 +290,8 @@ class KeplerMapper(object):
         simplicial_complex : dict
             A dictionary with "nodes", "links" and "meta" information.
 
-        Example
-        =======
+        Examples
+        ========
 
         >>> simplicial_complex = mapper.map(lens, X=None, clusterer=cluster.DBSCAN(eps=0.5,min_samples=3), cover=km.Cover(n_cubes=[10,20], perc_overlap=0.4))
 
@@ -342,10 +348,11 @@ class KeplerMapper(object):
         # we consider clustering or skipping it.
         cluster_params = clusterer.get_params()
         
-        min_cluster_samples = cluster_params.get("n_clusters", None)
-        if min_cluster_samples is None:
-            min_cluster_samples = cluster_params.get("min_cluster_size", 1)
-
+        min_cluster_samples = cluster_params.get("n_clusters", 
+            cluster_params.get("min_cluster_size", 
+            cluster_params.get("min_samples", 
+            1)))
+        
         if self.verbose > 1:
             print("Minimal points in hypercube before clustering: %d" %
                   (min_cluster_samples))
@@ -362,7 +369,7 @@ class KeplerMapper(object):
             hypercube = self.cover.find_entries(lens, cube)
 
             if self.verbose > 1:
-                print("There are %s points in cube_%s / %s" %
+                print("There are %s points in cube %s/%s" %
                       (hypercube.shape[0], i, total_bins))
 
             # If at least min_cluster_samples samples inside the hypercube
@@ -372,28 +379,28 @@ class KeplerMapper(object):
                 ids = [int(nn) for nn in hypercube[:, 0]]
                 X_cube = X[ids]
                 
-                X_cube = X[[int(nn) for nn in hypercube[:, 0]]]
                 fit_data = X_cube[:, 1:]
                 if precomputed:
                     fit_data = fit_data[:, ids]
-                clusterer.fit(fit_data)
+                    
+                cluster_predictions = clusterer.fit_predict(fit_data)
 
                 if self.verbose > 1:
-                    print("Found %s clusters in cube_%s\n" % (
-                        np.unique(clusterer.labels_[clusterer.labels_ > -1]).shape[0], i))
+                    print("   > Found %s clusters.\n" % (
+                        np.unique(cluster_predictions[cluster_predictions > -1]).shape[0]))
 
                 # TODO: I think this loop could be improved by turning inside out:
                 #           - partition points according to each cluster
                 # Now for every (sample id in cube, predicted cluster label)
-                for a in np.c_[hypercube[:, 0], clusterer.labels_]:
-                    if a[1] != -1:  # if not predicted as noise
+                for idx, pred in np.c_[hypercube[:, 0], cluster_predictions]:
+                    if pred != -1 and not np.isnan(pred):  # if not predicted as noise
 
                         # TODO: allow user supplied label
                         #   - where all those extra values necessary?
-                        cluster_id = "cube{}_cluster{}".format(i, int(a[1]))
+                        cluster_id = "cube{}_cluster{}".format(i, int(pred))
 
                         # Append the member id's as integers
-                        nodes[cluster_id].append(int(a[0]))
+                        nodes[cluster_id].append(int(idx))
                         meta[cluster_id] = {
                             "size": hypercube.shape[0], "coordinates": cube}
             else:
@@ -476,20 +483,17 @@ class KeplerMapper(object):
         show_tooltips: bool, default is True.
             If false, completely disable tooltips. This is useful when using output in space-tight pages or will display node data in custom ways.
 
-        Return
+        Returns
         ------
         html: string
             Returns the same html that is normally output to `path_html`. Complete graph and data ready for viewing.
 
-
-        Example
+        Examples
         -------
-
         >>> mapper.visualize(simplicial_complex, path_html="mapper_visualization_output.html",
                             custom_meta={'Data': 'MNIST handwritten digits', 
                                          'Created by': 'Franklin Roosevelt'
                             }, )
-
         """
 
         # TODO:
